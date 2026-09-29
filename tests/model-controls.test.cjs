@@ -1,0 +1,12 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync(require('path').join(__dirname,'../index.html'),'utf8');
+const source=html.slice(html.indexOf('  function modelOptions('),html.indexOf('  function modelButtons('));
+const fields={};for(const k of ['p','d','q','P','D','Q','s'])fields['model-'+k]={valueAsNumber:k==='s'?12:0,checkValidity:()=>true};
+fields['model-type']={value:'linear'};fields['model-log']={checked:false};
+fields['model-P']={valueAsNumber:NaN,checkValidity:()=>false};
+const ctx={$:id=>fields[id]};vm.createContext(ctx);vm.runInContext(source,ctx);
+assert.doesNotThrow(()=>ctx.modelOptions(),'Hidden invalid seasonal parameters must not block Linear Regression');
+assert.equal(ctx.modelOptions().P,0);
+fields['model-type'].value='sarima';assert.throws(()=>ctx.modelOptions(),/whole numbers/);
+fields['model-type'].value='arima';fields['model-s']={valueAsNumber:NaN,checkValidity:()=>false};assert.doesNotThrow(()=>ctx.modelOptions());
+console.log('Hidden parameters do not block models that do not use them.');

@@ -1,0 +1,13 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync(require('path').join(__dirname,'../index.html'),'utf8');
+const core=html.match(/<script id="report-core">([\s\S]*?)<\/script>/)[1];
+const context={Intl,Date,Math};vm.createContext(context);vm.runInContext(core,context);
+assert.equal(typeof context.appendModelDiagnosticsPDF,'function','PDF model diagnostics not implemented');
+const calls=[];let pages=1;
+const doc=new Proxy({}, {get:(_,name)=>name==='getNumberOfPages'?()=>pages:name==='splitTextToSize'?s=>[s]:name==='addPage'?()=>pages++:(...args)=>calls.push([name,...args])});
+const c={title:'Original demand',n:36,acf:[.4,.2],pacf:[.4,.1],band:.327,note:'95% bands'};
+context.appendModelDiagnosticsPDF(doc,{created:'14/09/2026',months:Array.from({length:36},(_,i)=>({key:24288+i,quantity:100+i})),forecast:{modelName:'SARIMA(1,1,0)(0,1,0)[12]',engine:'statsmodels',options:{d:1,D:1,s:12,log:false},r2:.7,adjustedR2:.65,fitLabel:'Descriptive R2',modelP:0,modelPTest:'Joint Wald',rmse:3,aic:40,bic:50,effectiveN:23,parameterCount:2,lbP:.3,lbLag:4,lbDf:3,coefficients:[{name:'ar.L1',value:.7,se:.1,p:.001}],stationarity:{before:{n:36,adf:.2,kpss:.01,note:'Before'},after:{n:23,adf:.001,kpss:.1,note:'After'}},transformed:[1,2,1],correlations:[c,{...c,title:'Transformed demand'},{...c,title:'Residuals'}],warnings:['Model warning']}});
+const text=calls.filter(c=>c[0]==='text').flatMap(c=>c[1]).join(' ');
+for(const label of ['SARIMA','Adjusted R2','Joint Wald','Ljung','ADF','KPSS','ACF','PACF','ar.L1','Model warning','<1e-16'])assert.ok(text.includes(label),`Missing report content ${label}`);
+assert.ok(pages>=5,'Diagnostics require paginated readable charts');
+console.log('PDF diagnostics: model, statistics, coefficients, stationarity, ACF/PACF and warnings present.');

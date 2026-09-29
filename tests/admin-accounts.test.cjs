@@ -1,0 +1,25 @@
+const demoPassword=require('node:crypto').randomBytes(24).toString('base64url');
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const {webcrypto}=require('node:crypto');
+const html=fs.readFileSync(require('path').join(__dirname,'../index.html'),'utf8');
+const ctx={crypto:webcrypto,TextEncoder,Uint8Array};vm.createContext(ctx);
+vm.runInContext(html.match(/<script id="account-core">([\s\S]*?)<\/script>/)[1],ctx);
+(async()=>{
+ assert.equal(typeof ctx.createAdminDemoAccount,'function','Admin account creation must be available');
+ let accounts=[{id:'owner',role:'admin',active:true,email:'owner@example.com'}],actor='owner';
+ const store={read:()=>structuredClone(accounts),save:rows=>accounts=structuredClone(rows),actor:()=>actor};
+ const input={name:' New User ',email:' NEW@example.com ',password:demoPassword,confirm:demoPassword,role:'member'};
+ const user=await ctx.createAdminDemoAccount(input,store);
+ assert.equal(user.name,'New User');assert.equal(user.email,'new@example.com');assert.equal(user.role,'member');assert.equal(user.lastLogin,null);
+ assert.equal(accounts.length,2);assert.equal(actor,'owner');assert.equal(user.password,undefined);
+ assert.equal(await ctx.hashDemoPassword(input.password,user.salt),user.hash);
+ await assert.rejects(()=>ctx.createAdminDemoAccount(input,store),/already exists/);
+ for(const changes of [{role:'superadmin'},{email:'bad'},{name:' '},{password:'short'},{confirm:'different'}]) await assert.rejects(()=>ctx.createAdminDemoAccount({...input,email:'other@example.com',...changes},store));
+ actor=user.id;await assert.rejects(()=>ctx.createAdminDemoAccount({...input,email:'other@example.com'},store),/administrator/);actor='owner';
+ const pending=ctx.createAdminDemoAccount({...input,email:'late@example.com'},store);actor=null;
+ await assert.rejects(()=>pending,/administrator/);assert.equal(accounts.length,2);actor='owner';
+ const admin=await ctx.createAdminDemoAccount({...input,email:'admin@example.com',role:'admin'},store);assert.equal(admin.role,'admin');
+ const duplicate=ctx.createAdminDemoAccount({...input,email:'racing@example.com'},store);accounts.push({id:'racer',email:'racing@example.com'});
+ await assert.rejects(()=>duplicate,/already exists/);
+ console.log('Admin creation: roles, credentials, duplicate validation and revoked-session checks pass.');
+})().catch(e=>{console.error(e);process.exitCode=1});
